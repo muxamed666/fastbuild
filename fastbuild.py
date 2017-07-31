@@ -185,7 +185,10 @@ def checksumModificatedSinceLastFastbuild(fname, oldchk):
 
 def getModificatedByGit(correctEndings, untrackedAction, filestree, pollHeaders):
 	gitfiles = list(Popen("git status --porcelain", shell=True, stdin=PIPE, stdout=PIPE).stdout.read().split(b"\n"))
-	oldchecksums = json.loads(open("fastbuild/repository.md5", 'r').read())
+	try:
+		oldchecksums = json.loads(open("fastbuild/repository.md5", 'r').read())
+	except IOError:
+		oldchecksums = dict()
 
 	toprocessing = list()
 
@@ -254,12 +257,12 @@ def getModificatedByGit(correctEndings, untrackedAction, filestree, pollHeaders)
 				else:
 					if checksumModificatedSinceLastFastbuild(source, oldchecksums):
 						if source not in toprocessing:
-							for currentEnding in endings:
+							for currentEnding in correctEndings:
 								cnt = len(currentEnding)
 								end = source[-1*cnt:]
 								if end == currentEnding:
 									toprocessing.append(source)
-									print("Adding file: " + header + " [" + end + "/md5]")									
+									print("Adding file: " + source + " [" + end + "/md5]")									
 
 	return toprocessing
 
@@ -330,14 +333,14 @@ def generateChecksums(filetree):
 
 def main():
 	print("\n\nFastbuild - (c) 2017 by Motylenok \"muxamed666\" Mikhail")
-	print(" * * * * Building project in FASTBUILD ALPHA MODE: \n\n")
+	print(" * * * * Building project in FASTBUILD ALPHA MODE: \n")
 
 	print("Step 0: Reading Config: ")
 	cfg = getConfig()
 	print("Done!")
 
 
-	print("\n\nStep 1: Building and polling file list: ")
+	print("\nStep 1: Building and polling file list: ")
 
 	finalfiles = dict()
 	filescount = 0
@@ -364,7 +367,7 @@ def main():
 	#print(finalfiles)
 
 
-	print("\n\nStep 2: Resolving dependencies and building dependency tree: ")
+	print("\nStep 2: Resolving dependencies and building dependency tree: ")
 
 	global repositoryRoot
 	child = Popen("git rev-parse --show-toplevel", shell=True, stdin=PIPE, stdout=PIPE) 
@@ -391,7 +394,7 @@ def main():
 	#pprint.pprint(finaldependency, indent=4)
 
 
-	print("\n\nStep 3: Calculating changes: ")
+	print("\nStep 3: Calculating changes: ")
 
 	global relativeToRoot
 	child = Popen("realpath --relative-to=. " + repositoryRoot, shell=True, stdin=PIPE, stdout=PIPE) 
@@ -418,7 +421,7 @@ def main():
 	if (len(buildlist) == 0):
 		print("Already up-to-date or no changes deleted.")
 
-	print("\n\nStep 4: Compiling microtargets: ")
+	print("\nStep 4: Compiling microtargets: ")
 	compiler = cfg["compiler"]
 	cparams = cfg["compiler_params"]
 	lparams = cfg["linker_params"]
@@ -446,11 +449,11 @@ def main():
 		print("Some targets failed to compile. Please fix errors, and run fastbuild again.")
 		sys.exit(0)
 	
-	print("\n\nStep 5: Linking obj-files: ")
+	print("\nStep 5: Linking obj-files: ")
 	outfile = cfg["linker_output_file"]
 
 	print("["+compiler+"] Linking " + outfile + " ", end="")
-	linkerShell = compiler + " " + lparams + " fastbuild/*.o -o " + outfile
+	linkerShell = compiler + " fastbuild/*.o -o " + outfile + " " + lparams
 	#print(linkerShell) 
 	lstart = time.time()
 	ret = call(linkerShell, shell=True)
@@ -459,9 +462,9 @@ def main():
 		failmarker = True
 		print("[failed]")
 	else:
-		print("[Successful in " + str(round(cend - cstart, 2)) + " seconds]")
+		print("[Successful in " + str(round(lend - lstart, 2)) + " seconds]")
 
-	call("pwd", shell=True)
+	#call("pwd", shell=True)
 
 	if failmarker:
 		print("Failed to link obj files. Please fix errors, and run fastbuild again.")
