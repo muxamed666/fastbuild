@@ -35,9 +35,9 @@
 #//"targets_build_path" - path to save .o files of compiled targets
 #//"linker_output_file" - output file name and/or path
 #//"postprocessing_shell" - shell commands to execute when fastbuild finished
-#//"postprocessiong_if_failes" - exec shell commands if failed?
-#//"untracked_action" - default action to do with untracked files (vard: "ask", "accept", "ignore")
-#//"sources_endings" - what files to compile - most common: ".c", ".cpp"
+#//"postprocessing_if_failed" - exec shell commands if failed?
+#//"untracked_action" - default action to do with untracked files (vars: "ask", "accept", "ignore")
+#//"sources_endings" - what files to compile (most common: ".c", ".cpp")
 #//"headers_endings" - all endings of headers files in projects: (example: ".h", ".hpp")
 #//"macrotargets" - structure of pairs of macrotraget's name and array of 
 #//			filename strings. Each string must contain one file name or one 
