@@ -37,14 +37,19 @@ Availible config parameters:
 When you have this config file in your git repo, you can just type "fastbuild" and your project will be compiled.
 
 Also, availible some command line parameters: 
-*    `--help`		Display help screen
-*    `-q`   		`--quiet`				Supress output
-*    `-a`   		`--rebuildall`		Rebuild all targets
-*    `-i <FILE>`   `--input <FILE>`		Specify config file
-*    `-y`			`--alwaysyes`			Always answer "yes" 
-*    `-c <FORMAT>` `--sources <FORMAT>`	Extension of source files (default: from config value)
-*    `-r <0 - 99>`	`--recmax <0 - 99>`	Maximum deep of targets dependencies tree (default: 12)
-*    `-e <ENCODE>` `--encoding <ENCODE>` Force strings encoding in this Python 3 format
+
+* usage: fastbuild `[-h]` `[-q | -c]` `[-a]` `[-i INPUT]` `[-t]` `[-r RECMAX]` `[-e ENCODE]`
+
+optional arguments:
+*  `-h`, `--help`            show this help message and exit
+*  `-q`, `--quiet`           Supress output
+*  `-c`, `--compact`         Display not detailed output
+*  `-a`, `--rebuildall`      Rebuild all targets
+*  `-i INPUT`, `--input INPUT`  Specify config file (default: fastbuild.json)
+*  `-t`, `--tree`            Display dependencies tree and exit
+*  `-r RECMAX`, `--recmax RECMAX` Maximum deep of dependencies tree (default: 24)
+*  `-e ENCODE`, `--encode ENCODE` Force strings encoding in this Python 3 format
+
 
 # Legit?
 It is free software, covered by Apache license. 
