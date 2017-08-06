@@ -30,8 +30,8 @@
 #//"sources_endings" - what files to compile (most common: ".c", ".cpp")
 #//"headers_endings" - all endings of headers files in projects: (example: ".h", ".hpp")
 #//"macrotargets" - structure of pairs of macrotraget's name and array of 
-#//			filename strings. Each string must contain one file name or one 
-#//			correct regular expression for files. 
+#//         filename strings. Each string must contain one file name or one 
+#//         correct regular expression for files. 
 
 
 from subprocess import Popen, PIPE
@@ -53,7 +53,9 @@ treeOut = False
 recursionThreshold = 24
 systemEncoding = sys.stdout.encoding
 
+
 class bgcolors:
+    """ Class contains background color escapes for terminal """
     HEADER = '\033[95m'
     BLUE = '\033[94m'
     GREEN = '\033[92m'
@@ -65,488 +67,527 @@ class bgcolors:
 
 
 def fastprint(txt, level=0, fastend=None):
-	if (level < outputlevel):
-		return 
+    """Function implements output operation.
+    Level paramter allows to cut or verbose output strings.
+    level 0 is global (all strings), 1 - important strings, 2 - error strings
+    """
+    if (level < outputlevel):
+        return 
 
-	if(fastend == None):
-		print(txt)
-	else:
-		print(txt, end=fastend)
+    if(fastend == None):
+        print(txt)
+    else:
+        print(txt, end=fastend)
 
 
 def resolveFilesRegexp(macrotargetRegexp):
-	child = Popen("dir -x1 " + macrotargetRegexp, shell=True, stdin=PIPE, stdout=PIPE) 
-	files = list(child.stdout.read().split(b"\n"))
+    """Resolve regular expressions in file names. For example,
+    it will convert somedir/*.cpp to somedir/foo.cpp and somedir/bar.cpp 
+    (if those file both are on disk in somedir)
+    calls to dir utillity
+    """
+    child = Popen("dir -x1 " + macrotargetRegexp, shell=True, stdin=PIPE, stdout=PIPE) 
+    files = list(child.stdout.read().split(b"\n"))
 
-	if child.wait() != 0:
-		sys.exit("\n\n" + macrotargetRegexp + " has incorrect, inaccessible or unreadable files. (status=" + str(child.wait())
-			+ ") \"dir -x1 " + macrotargetRegexp + "\" shell command failed. Please check config and access rights.")
+    if child.wait() != 0:
+        sys.exit("\n\n" + macrotargetRegexp + " has incorrect, inaccessible or unreadable files. (status=" + str(child.wait())
+            + ") \"dir -x1 " + macrotargetRegexp + "\" shell command failed. Please check config and access rights.")
 
-	return files
+    return files
 
 
 def resolveRelativePath(path):
-	child = Popen("realpath --relative-to=\""+repositoryRoot+"\" " + path, shell=True, stdin=PIPE, stdout=PIPE) 
-	files = list(child.stdout.read().split(b"\n"))
+    """Converts relative paths to absolute paths using the realpath utility
+    This function is called for each dependency file in C/C++ code, so 
+    all filenames are comparable to each other.
+    """
+    child = Popen("realpath --relative-to=\""+repositoryRoot+"\" " + path, shell=True, stdin=PIPE, stdout=PIPE) 
+    files = list(child.stdout.read().split(b"\n"))
 
-	if child.wait() != 0:
-		sys.exit("\n\n" + path + " has incorrect, inaccessible or unreadable files. (status=" + str(child.wait())
-			+ ") \"realpath --relative-to=. " + path + "\" shell command failed. Please check config and access rights.")
+    if child.wait() != 0:
+        sys.exit("\n\n" + path + " has incorrect, inaccessible or unreadable files. (status=" + str(child.wait())
+            + ") \"realpath --relative-to=. " + path + "\" shell command failed. Please check config and access rights.")
 
-	return str(files[0].decode(systemEncoding))
+    return str(files[0].decode(systemEncoding))
 
 
 
 def findDependeciesInFile(filename, deep, maxhops, deplist):
-	if deep >= maxhops:
-		return deplist
+    """The function recursively searches for directives for inclusions in C++ code files, 
+    specifies the maximum depth of recursion. Files are included in the returned list 
+    of dependencies without duplicates.
+    """
+    if deep >= maxhops:
+        return deplist
 
-	try:
-		f = open(filename, 'r')
-		filetxt = f.read()
-		f.close()		
-	except IOError:
-		sys.exit(filename + " file read error! Critical!")
+    try:
+        f = open(filename, 'r')
+        filetxt = f.read()
+        f.close()       
+    except IOError:
+        sys.exit(filename + " file read error! Critical!")
 
-	offset = 0
+    offset = 0
 
-	while (1):
-		includeStart = filetxt.find("#include \"", offset)
+    while (1):
+        includeStart = filetxt.find("#include \"", offset)
 
-		if includeStart == -1:
-			break
+        if includeStart == -1:
+            break
 
-		if filetxt[includeStart - 2 : includeStart] == "//":
-			offset = offset + 12
-			continue
+        if filetxt[includeStart - 2 : includeStart] == "//":
+            offset = offset + 12
+            continue
 
-		includeEnd = filetxt.find("\"", includeStart + 11, includeStart + 128)
-		dependency = filetxt[includeStart+10 : includeEnd]
-		
-		offset = includeStart + 15
+        includeEnd = filetxt.find("\"", includeStart + 11, includeStart + 128)
+        dependency = filetxt[includeStart+10 : includeEnd]
+        
+        offset = includeStart + 15
 
-		slash = filename.rfind("/")
-		path = ""
+        slash = filename.rfind("/")
+        path = ""
 
-		if slash != -1:
-			path = filename[0 : slash]
+        if slash != -1:
+            path = filename[0 : slash]
 
-		if path != "":
-			dependency = path + "/" + dependency 
+        if path != "":
+            dependency = path + "/" + dependency 
 
-		resolvedDependency = resolveRelativePath(dependency)
+        resolvedDependency = resolveRelativePath(dependency)
 
-		if not (resolvedDependency in deplist):
-			if treeOut:
-				i = 0
-				fastprint(" ", fastend="")
-				while i < deep:
-					fastprint("--", fastend="")	
-					i = i + 1	
-				fastprint(">  " + resolvedDependency) #!
-				
-				#TODO: make visible
-
-			deplist.append(resolvedDependency)
-			
-			ndp = deep + 1
-			findDependeciesInFile(dependency, ndp, recursionThreshold, deplist)		
-	return deplist	
-
+        if not (resolvedDependency in deplist):
+            if treeOut:
+                i = 0
+                fastprint(" ", fastend="")
+                while i < deep:
+                    fastprint("--", fastend="") 
+                    i = i + 1   
+                fastprint(">  " + resolvedDependency) #!
+                
+            deplist.append(resolvedDependency)
+            
+            ndp = deep + 1
+            findDependeciesInFile(dependency, ndp, recursionThreshold, deplist)     
+    return deplist  
 
 
 def getConfig():
-	#TODO: read config file from filename in argv
+    """Reads the configuration file and converts it from the json format to a 
+    dictionary that stores the build parameters of the current project. Recommendations for 
+    filling the configuration file can be found in the Readme or you can study the sample file
+    """
+    try:
+        f = open(configFileName, 'r')
+        conftxt = f.read()
+        f.close()       
+    except IOError:
+        sys.exit("Error while open file " + configFileName + "!")
 
-	try:
-		f = open(configFileName, 'r')
-		conftxt = f.read()
-		f.close()		
-	except IOError:
-		sys.exit("Error while open file " + configFileName + "!")
+    #print(conftxt)
 
-	#print(conftxt)
+    try:
+        configObject = json.loads(conftxt)
+    except json.decoder.JSONDecodeError:
+        sys.exit("config file is incorrect!")
 
-	try:
-		configObject = json.loads(conftxt)
-	except json.decoder.JSONDecodeError:
-		sys.exit("config file is incorrect!")
+    #TODO: catch json expetions here
+    #TODO: validate config
 
-	#TODO: catch json expetions here
-	#TODO: validate config
-
-	return configObject
+    return configObject
 
 
 def checksumModificatedSinceLastFastbuild(fname, oldchk):
-	#pprint.pprint(oldchk)
-	if(fname not in oldchk.keys()):
-		return True
+    """Determines whether the checksum of the file has changed since the 
+    last time the hash table was saved to the disk.
+    """
+    #pprint.pprint(oldchk)
+    if(fname not in oldchk.keys()):
+        return True
 
-	if rebuildall:
-		return True
+    if rebuildall:
+        return True
 
-	checksumNew = hashlib.md5(open(fname, 'rb').read()).hexdigest()
-	checksumOld = oldchk[fname]
-	if checksumNew == checksumOld:
-		return False
-	else:
-		return True
+    checksumNew = hashlib.md5(open(fname, 'rb').read()).hexdigest()
+    checksumOld = oldchk[fname]
+    if checksumNew == checksumOld:
+        return False
+    else:
+        return True
 
 
 def getModificatedByGit(correctEndings, untrackedAction, filestree, pollHeaders):
-	gitfiles = list(Popen("git status --porcelain", shell=True, stdin=PIPE, stdout=PIPE).stdout.read().split(b"\n"))
-	try:
-		oldchecksums = json.loads(open("fastbuild/repository.md5", 'r').read())
-	except IOError:
-		oldchecksums = dict()
+    """With the help of the repository, git determines the modification of 
+    files in the file tree with the specified extensions. For files that are not 
+    specified in git, the modified function attempts to determine the fact of the 
+    change using a hash table.
+    """
+    gitfiles = list(Popen("git status --porcelain", shell=True, stdin=PIPE, stdout=PIPE).stdout.read().split(b"\n"))
+    try:
+        oldchecksums = json.loads(open("fastbuild/repository.md5", 'r').read())
+    except IOError:
+        oldchecksums = dict()
 
-	toprocessing = list()
+    toprocessing = list()
 
-	#M -> modifing -> rebuild
-	#A -> new file -> rebuild
-	#D -> deleted -> ignore
-	#R -> renamed -> rebuild
-	#C -> copied -> rebuild
-	#?? -> untracked -> ask user
+    #M -> modifing -> rebuild
+    #A -> new file -> rebuild
+    #D -> deleted -> ignore
+    #R -> renamed -> rebuild
+    #C -> copied -> rebuild
+    #?? -> untracked -> ask user
 
-	for candidate in gitfiles:
-		for currentEnding in correctEndings:
-			cnt = len(currentEnding)
-			candidateStr = str(candidate.decode(systemEncoding))
-			start = candidateStr[1:2]
-			end = candidateStr[-1*cnt:]
-			candidateName = candidateStr[3:]
+    for candidate in gitfiles:
+        for currentEnding in correctEndings:
+            cnt = len(currentEnding)
+            candidateStr = str(candidate.decode(systemEncoding))
+            start = candidateStr[1:2]
+            end = candidateStr[-1*cnt:]
+            candidateName = candidateStr[3:]
 
-			if (end != currentEnding):
-				continue
+            if (end != currentEnding):
+                continue
 
-			if (start == "D"):
-				continue
+            if (start == "D"):
+                continue
 
-			if (start == "?"):
-				if untrackedAction == "ignore":
-					continue
-				#elif untrackedAction == "ask":
-					#print("file \"" + candidateStr + "\"have untracked git status, it is not in git repository. \n\
-					#If this is just a new file(s) in your project, please make \"git add [filename]\" to add them in your\n\
-					#project repository as soon as possible.\n\
-					#Also, you can set default action for untracked files by untrackedAction parameter in config (ask, accept or ignore)\n\
-					#\n")
-					#quest = "Add this file to build list?"
-					#cho = query_yes_no(quest, default="no")
-					#if not cho:
-					#	continue
+            if (start == "?"):
+                if untrackedAction == "ignore":
+                    continue
+                #elif untrackedAction == "ask":
+                    #print("file \"" + candidateStr + "\"have untracked git status, it is not in git repository. \n\
+                    #If this is just a new file(s) in your project, please make \"git add [filename]\" to add them in your\n\
+                    #project repository as soon as possible.\n\
+                    #Also, you can set default action for untracked files by untrackedAction parameter in config (ask, accept or ignore)\n\
+                    #\n")
+                    #quest = "Add this file to build list?"
+                    #cho = query_yes_no(quest, default="no")
+                    #if not cho:
+                    #   continue
 
-			if len(relativeToRoot) > 0:
-				candidateName = relativeToRoot + "/" + candidateName
+            if len(relativeToRoot) > 0:
+                candidateName = relativeToRoot + "/" + candidateName
 
-			if(not checksumModificatedSinceLastFastbuild(candidateName, oldchecksums)):
-				continue
+            if(not checksumModificatedSinceLastFastbuild(candidateName, oldchecksums)):
+                continue
 
-			fastprint("Adding file: " + candidateName + " [" + end + "/" + start + "/git]")
-			toprocessing.append(candidateName)
-			#print(start + b"//////" + end)
+            fastprint("Adding file: " + candidateName + " [" + end + "/" + start + "/git]")
+            toprocessing.append(candidateName)
+            #print(start + b"//////" + end)
 
-	for mt in filestree:
-		for files in filestree[mt]:
-			for source in files:
-				if pollHeaders:
-					for headers in files[source]:
-						if (len(relativeToRoot) > 0):
-							header = relativeToRoot + "/" + headers
-						else:
-							header = headers
-						if checksumModificatedSinceLastFastbuild(header, oldchecksums):
-							if header not in toprocessing:
-								for currentEnding in correctEndings:
-									cnt = len(currentEnding)
-									end = header[-1*cnt:]
-									if end == currentEnding:
-										toprocessing.append(header)
-										if not rebuildall:
-											fastprint("Adding file: " + header + " [" + end + "/md5]")
-										else:
-											fastprint("Adding file: " + header + " [" + end + "/rebuildall]")
-				else:
-					if checksumModificatedSinceLastFastbuild(source, oldchecksums):
-						if source not in toprocessing:
-							for currentEnding in correctEndings:
-								cnt = len(currentEnding)
-								end = source[-1*cnt:]
-								if end == currentEnding:
-									toprocessing.append(source)
-									if not rebuildall:
-										fastprint("Adding file: " + source + " [" + end + "/md5]")
-									else:
-										fastprint("Adding file: " + source + " [" + end + "/rebuildall]")									
+    # Search in hashes
 
-	return toprocessing
+    for mt in filestree:
+        for files in filestree[mt]:
+            for source in files:
+                if pollHeaders:
+                    for headers in files[source]:
+                        if (len(relativeToRoot) > 0):
+                            header = relativeToRoot + "/" + headers
+                        else:
+                            header = headers
+                        if checksumModificatedSinceLastFastbuild(header, oldchecksums):
+                            if header not in toprocessing:
+                                for currentEnding in correctEndings:
+                                    cnt = len(currentEnding)
+                                    end = header[-1*cnt:]
+                                    if end == currentEnding:
+                                        toprocessing.append(header)
+                                        if not rebuildall:
+                                            fastprint("Adding file: " + header + " [" + end + "/md5]")
+                                        else:
+                                            fastprint("Adding file: " + header + " [" + end + "/rebuildall]")
+                else:
+                    if checksumModificatedSinceLastFastbuild(source, oldchecksums):
+                        if source not in toprocessing:
+                            for currentEnding in correctEndings:
+                                cnt = len(currentEnding)
+                                end = source[-1*cnt:]
+                                if end == currentEnding:
+                                    toprocessing.append(source)
+                                    if not rebuildall:
+                                        fastprint("Adding file: " + source + " [" + end + "/md5]")
+                                    else:
+                                        fastprint("Adding file: " + source + " [" + end + "/rebuildall]")                                   
+
+    return toprocessing
 
 
 
 def selectDependecies(deps, headers):
-	sourcesDependence = list()
+    """Finds which source files depend on the changed header files. 
+    Forms and returns a list of these dependencies.
+    """
+    sourcesDependence = list()
 
-	for macrotarget in deps:
-		for sourcelst in deps[macrotarget]:
-			for source in sourcelst:
-				for sourcedeps in sourcelst[source]:
-					for header in headers:
-						if (len(relativeToRoot) > 0):
-							depheader = relativeToRoot + "/" + sourcedeps
-						else:
-							depheader = sourcedeps
-						#fastprint("comparing " + header + " and " + depheader + " (src = " + source + ") ")
-						if(header == depheader):
-							sourcesDependence.append(source)
-							#fastprint("--> Adding file: " + source + " [dependency of \""+header+"\"]")
+    for macrotarget in deps:
+        for sourcelst in deps[macrotarget]:
+            for source in sourcelst:
+                for sourcedeps in sourcelst[source]:
+                    for header in headers:
+                        if (len(relativeToRoot) > 0):
+                            depheader = relativeToRoot + "/" + sourcedeps
+                        else:
+                            depheader = sourcedeps
+                        #fastprint("comparing " + header + " and " + depheader + " (src = " + source + ") ")
+                        if(header == depheader):
+                            sourcesDependence.append(source)
+                            #fastprint("--> Adding file: " + source + " [dependency of \""+header+"\"]")
 
-	return sourcesDependence
+    return sourcesDependence
 
 
 def detectMissingObjFiles(filetree):
-	if(not os.path.isdir("fastbuild")):
-		fastprint("fastbuild work directory not found -> rebuild all targets", level=1)
-		os.makedirs("fastbuild")
+    """Finds which object files are not in the cache to 
+    add them to the list for recompilation.
+    """
+    
+    if(not os.path.isdir("fastbuild")):
+        fastprint("fastbuild work directory not found -> rebuild all targets", level=1)
+        os.makedirs("fastbuild")
 
-	newObjFiles = list()
+    newObjFiles = list()
 
-	for mt in filetree:
-		for fn in filetree[mt]:
-			objFilename = hashlib.md5(fn.encode('utf-8')).hexdigest()
-			if(not os.path.exists("fastbuild/"+objFilename+".o")):
-				#fastprint("---> Adding file: " + fn + " [new object]")
-				newObjFiles.append(fn)
-			#print(mt + " -> " + fn + " -> " + )
-	return newObjFiles
+    for mt in filetree:
+        for fn in filetree[mt]:
+            objFilename = hashlib.md5(fn.encode('utf-8')).hexdigest()
+            if(not os.path.exists("fastbuild/"+objFilename+".o")):
+                #fastprint("---> Adding file: " + fn + " [new object]")
+                newObjFiles.append(fn)
+            #print(mt + " -> " + fn + " -> " + )
+    return newObjFiles
 
 
 def generateChecksums(filetree):
-	sums = dict()
+    """Generates a hash table with checksums for the project files so that 
+    the program can then find changes to the subsequent build from the current one.
+    """
 
-	for macrotarget in filetree:
-		for sourcelst in filetree[macrotarget]:
-			for source in sourcelst:
-				if source not in sums.keys():
-					checksum = hashlib.md5(open(source, 'rb').read()).hexdigest()
-					sums.update({source : checksum})
-				for sourcedeps in sourcelst[source]:
-					if (len(relativeToRoot) > 0):
-						depheader = relativeToRoot + "/" + sourcedeps
-					else:
-						depheader = sourcedeps
-					
-					if depheader not in sums.keys():
-						checksum = hashlib.md5(open(depheader, 'rb').read()).hexdigest()
-						sums.update({depheader : checksum})
+    sums = dict()
 
-	wt = open("fastbuild/repository.md5", "w")
-	wt.write(json.dumps(sums))
-	wt.close()
+    for macrotarget in filetree:
+        for sourcelst in filetree[macrotarget]:
+            for source in sourcelst:
+                if source not in sums.keys():
+                    checksum = hashlib.md5(open(source, 'rb').read()).hexdigest()
+                    sums.update({source : checksum})
+                for sourcedeps in sourcelst[source]:
+                    if (len(relativeToRoot) > 0):
+                        depheader = relativeToRoot + "/" + sourcedeps
+                    else:
+                        depheader = sourcedeps
+                    
+                    if depheader not in sums.keys():
+                        checksum = hashlib.md5(open(depheader, 'rb').read()).hexdigest()
+                        sums.update({depheader : checksum})
 
-	#pprint.pprint(sums)
+    wt = open("fastbuild/repository.md5", "w")
+    wt.write(json.dumps(sums))
+    wt.close()
+
+    #pprint.pprint(sums)
 
 
 def main():
-	fastprint(bgcolors.BOLD + bgcolors.UNDERLINE + "\nFastbuild - (c) 2017 by Motylenok \"muxamed666\" Mikhail\n" + bgcolors.ENDC)
+    """ main() function, consistently performs all the steps of the project's build porcess """
+    fastprint(bgcolors.BOLD + bgcolors.UNDERLINE + "\nFastbuild - (c) 2017 by Motylenok \"muxamed666\" Mikhail\n" + bgcolors.ENDC)
 
-	fastprint("Step 0: Reading Config: ", level=1)
-	cfg = getConfig()
-	fastprint("Done!", level=1)
-
-
-	fastprint("\nStep 1: Building and polling file list: ", level=1)
-
-	finalfiles = dict()
-	filescount = 0
-	targetscount = len(cfg["macrotargets"])
-	j = 0
-
-	for macrotarget in cfg["macrotargets"]:
-		#print("\nFiles for macrotarget \"" + macrotarget + "\": ")
-		#TODO: make visible
-		src = list()
-		for filelist in cfg["macrotargets"][macrotarget]:
-			for files in resolveFilesRegexp(filelist):
-				item = str(files.decode(systemEncoding))
-				if item != "":
-					filescount = filescount + 1;
-					src.append(item)
-					#print("\t" + item)
-					#TODO: make visible
-		j = j + 1
-		fastprint("[" + str(int(round((j / targetscount) * 100 ))) + "%] In Progress...", fastend="\r", level=1)
-		finalfiles.update({macrotarget: src})
-
-	fastprint("[100%] Done!              ", level=1)
-	#fastprint(finalfiles)
+    fastprint("Step 0: Reading Config: ", level=1)
+    cfg = getConfig()
+    fastprint("Done!", level=1)
 
 
-	fastprint("\nStep 2: Resolving dependencies and building dependency tree: ", level=1)
+    fastprint("\nStep 1: Building and polling file list: ", level=1)
 
-	global repositoryRoot
-	child = Popen("git rev-parse --show-toplevel", shell=True, stdin=PIPE, stdout=PIPE) 
-	repositoryRoot = str(list(child.stdout.read().split(b"\n"))[0].decode(systemEncoding))
+    finalfiles = dict()
+    filescount = 0
+    targetscount = len(cfg["macrotargets"])
+    j = 0
 
-	finaldependency = dict()
-	i = 0
+    for macrotarget in cfg["macrotargets"]:
+        #print("\nFiles for macrotarget \"" + macrotarget + "\": ")
+        #TODO: make visible
+        src = list()
+        for filelist in cfg["macrotargets"][macrotarget]:
+            for files in resolveFilesRegexp(filelist):
+                item = str(files.decode(systemEncoding))
+                if item != "":
+                    filescount = filescount + 1;
+                    src.append(item)
+                    #print("\t" + item)
+                    #TODO: make visible
+        j = j + 1
+        fastprint("[" + str(int(round((j / targetscount) * 100 ))) + "%] In Progress...", fastend="\r", level=1)
+        finalfiles.update({macrotarget: src})
 
-	for mt in finalfiles:
-		if treeOut:
-			fastprint(bgcolors.HEADER + bgcolors.BOLD + "\n * * * * * * * * * " + mt + " * * * * * * * * * " + bgcolors.ENDC)
-		srcdps = list()
-		for fn in finalfiles.get(mt):
-			i = i + 1
-			if treeOut:
-				fastprint(bgcolors.GREEN + bgcolors.BOLD + "\n>>>> " + fn + bgcolors.ENDC)
-			deps = findDependeciesInFile(fn, 1, recursionThreshold, list())
-			filedeps = dict({fn : deps})
-			srcdps.append(filedeps)
-			if not treeOut:
-				fastprint("[" + str(int(round( (i / filescount) * 100 ))) + "%] In Progress...", fastend="\r", level=1)
-		finaldependency.update({mt : srcdps})
+    fastprint("[100%] Done!              ", level=1)
+    #fastprint(finalfiles)
 
-	fastprint("[100%] Done!              ", level=1)
-	#pprint.pprint(finaldependency, indent=4)
 
-	if treeOut:
-		sys.exit(0)
+    fastprint("\nStep 2: Resolving dependencies and building dependency tree: ", level=1)
 
-	fastprint("\nStep 3: Calculating changes: ", level=1)
+    global repositoryRoot
+    child = Popen("git rev-parse --show-toplevel", shell=True, stdin=PIPE, stdout=PIPE) 
+    repositoryRoot = str(list(child.stdout.read().split(b"\n"))[0].decode(systemEncoding))
 
-	global relativeToRoot
-	child = Popen("realpath --relative-to=. " + repositoryRoot, shell=True, stdin=PIPE, stdout=PIPE) 
-	relativeToRoot = str(list(child.stdout.read().split(b"\n"))[0].decode(systemEncoding))
+    finaldependency = dict()
+    i = 0
 
-	sources = getModificatedByGit(cfg["sources_endings"], cfg["untracked_action"], finaldependency, False)
-	headers = getModificatedByGit(cfg["headers_endings"], cfg["untracked_action"], finaldependency, True)
-	dependn = selectDependecies(finaldependency, headers)
+    for mt in finalfiles:
+        if treeOut:
+            fastprint(bgcolors.HEADER + bgcolors.BOLD + "\n * * * * * * * * * " + mt + " * * * * * * * * * " + bgcolors.ENDC)
+        srcdps = list()
+        for fn in finalfiles.get(mt):
+            i = i + 1
+            if treeOut:
+                fastprint(bgcolors.GREEN + bgcolors.BOLD + "\n>>>> " + fn + bgcolors.ENDC)
+            deps = findDependeciesInFile(fn, 1, recursionThreshold, list())
+            filedeps = dict({fn : deps})
+            srcdps.append(filedeps)
+            if not treeOut:
+                fastprint("[" + str(int(round( (i / filescount) * 100 ))) + "%] In Progress...", fastend="\r", level=1)
+        finaldependency.update({mt : srcdps})
 
-	buildlist = sources
+    fastprint("[100%] Done!              ", level=1)
+    #pprint.pprint(finaldependency, indent=4)
 
-	for dep in dependn:
-		if dep not in buildlist:
-			buildlist.append(dep)
-			fastprint("Adding file: " + dep + " [dependency]")
+    if treeOut:
+        sys.exit(0)
 
-	newobjs = detectMissingObjFiles(finalfiles)
+    fastprint("\nStep 3: Calculating changes: ", level=1)
 
-	for obj in newobjs:
-		if obj not in buildlist:
-			buildlist.append(obj)
-			fastprint("Adding file: " + obj + " [new object]")
+    global relativeToRoot
+    child = Popen("realpath --relative-to=. " + repositoryRoot, shell=True, stdin=PIPE, stdout=PIPE) 
+    relativeToRoot = str(list(child.stdout.read().split(b"\n"))[0].decode(systemEncoding))
 
-	if (len(buildlist) == 0):
-		fastprint("Already up-to-date or no changes detected.", level=1)
-	else:
-		fastprint("Done!", level=1)
+    sources = getModificatedByGit(cfg["sources_endings"], cfg["untracked_action"], finaldependency, False)
+    headers = getModificatedByGit(cfg["headers_endings"], cfg["untracked_action"], finaldependency, True)
+    dependn = selectDependecies(finaldependency, headers)
 
-	fastprint("\nStep 4: Compiling microtargets: ", level=1)
-	compiler = cfg["compiler"]
-	cparams = cfg["compiler_params"]
-	lparams = cfg["linker_params"]
-	failmarker = False
+    buildlist = sources
 
-	if (len(buildlist) == 0):
-		fastprint("Nothing to compile.", level=1)
+    for dep in dependn:
+        if dep not in buildlist:
+            buildlist.append(dep)
+            fastprint("Adding file: " + dep + " [dependency]")
 
-	for target in buildlist:
-		targetObjName = hashlib.md5(target.encode('utf-8')).hexdigest()
-		targetObjPath = "fastbuild/" + targetObjName + ".o"
-		compilerShell = compiler + " " + cparams + " " + lparams + " -c " + target +" -o " + targetObjPath
-		#fastprint(compilerShell)
-		fastprint("["+compiler+"] Compile " + target + " (object id: "+targetObjName+") ", fastend="")
-		cstart = time.time()
-		ret = call(compilerShell, shell=True)
-		cend = time.time()
-		if(ret != 0):
-			failmarker = True
-			fastprint("[failed]")
-		else:
-			fastprint("[Successful in " + str(round(cend - cstart, 2)) + " seconds]")
+    newobjs = detectMissingObjFiles(finalfiles)
 
-	if failmarker:
-		fastprint("Some targets failed to compile. Please fix errors, and run fastbuild again.", level=2)
-		sys.exit(0)
-	
-	fastprint("\nStep 5: Linking obj-files: ", level=1)
-	outfile = cfg["linker_output_file"]
+    for obj in newobjs:
+        if obj not in buildlist:
+            buildlist.append(obj)
+            fastprint("Adding file: " + obj + " [new object]")
 
-	fastprint("["+compiler+"] Linking " + outfile + " ", fastend="")
-	linkerShell = compiler + " fastbuild/*.o -o " + outfile + " " + lparams
-	#fastprint(linkerShell) 
-	lstart = time.time()
-	ret = call(linkerShell, shell=True)
-	lend = time.time()
-	if(ret != 0):
-		failmarker = True
-		fastprint("[failed]")
-	else:
-		fastprint("[Successful in " + str(round(lend - lstart, 2)) + " seconds]")
-		fastprint("Done!", level=1)
+    if (len(buildlist) == 0):
+        fastprint("Already up-to-date or no changes detected.", level=1)
+    else:
+        fastprint("Done!", level=1)
 
-	#call("pwd", shell=True)
+    fastprint("\nStep 4: Compiling microtargets: ", level=1)
+    compiler = cfg["compiler"]
+    cparams = cfg["compiler_params"]
+    lparams = cfg["linker_params"]
+    failmarker = False
 
-	if failmarker:
-		fastprint("Failed to link obj files. Please fix errors, and run fastbuild again.", level=2)
-		sys.exit(0)
+    if (len(buildlist) == 0):
+        fastprint("Nothing to compile.", level=1)
 
-	if not failmarker: 
-		generateChecksums(finaldependency)
+    for target in buildlist:
+        targetObjName = hashlib.md5(target.encode('utf-8')).hexdigest()
+        targetObjPath = "fastbuild/" + targetObjName + ".o"
+        compilerShell = compiler + " " + cparams + " " + lparams + " -c " + target +" -o " + targetObjPath
+        #fastprint(compilerShell)
+        fastprint("["+compiler+"] Compile " + target + " (object id: "+targetObjName+") ", fastend="")
+        cstart = time.time()
+        ret = call(compilerShell, shell=True)
+        cend = time.time()
+        if(ret != 0):
+            failmarker = True
+            fastprint("[failed]")
+        else:
+            fastprint("[Successful in " + str(round(cend - cstart, 2)) + " seconds]")
 
-	fastprint("\nStep 6: Running postprocessing shell: ", level=1)	
+    if failmarker:
+        fastprint("Some targets failed to compile. Please fix errors, and run fastbuild again.", level=2)
+        sys.exit(0)
+    
+    fastprint("\nStep 5: Linking obj-files: ", level=1)
+    outfile = cfg["linker_output_file"]
 
-	if ("postprocessing_shell" in cfg.keys()) and (cfg["postprocessing_shell"] != ""):
-		if not failmarker:
-			call(cfg["postprocessing_shell"], shell=True)
-		else:
-			if cfg["postprocessing_if_failed"]:
-				call(cfg["postprocessing_shell"], shell=True)
-			else:
-				fastprint("Postprocessing disabled on fails by config parameter", level=1)
-	else:
-		fastprint("Postprocessing disabled", level=1)
+    fastprint("["+compiler+"] Linking " + outfile + " ", fastend="")
+    linkerShell = compiler + " fastbuild/*.o -o " + outfile + " " + lparams
+    #fastprint(linkerShell) 
+    lstart = time.time()
+    ret = call(linkerShell, shell=True)
+    lend = time.time()
+    if(ret != 0):
+        failmarker = True
+        fastprint("[failed]")
+    else:
+        fastprint("[Successful in " + str(round(lend - lstart, 2)) + " seconds]")
+        fastprint("Done!", level=1)
+
+    #call("pwd", shell=True)
+
+    if failmarker:
+        fastprint("Failed to link obj files. Please fix errors, and run fastbuild again.", level=2)
+        sys.exit(0)
+
+    if not failmarker: 
+        generateChecksums(finaldependency)
+
+    fastprint("\nStep 6: Running postprocessing shell: ", level=1)  
+
+    if ("postprocessing_shell" in cfg.keys()) and (cfg["postprocessing_shell"] != ""):
+        if not failmarker:
+            call(cfg["postprocessing_shell"], shell=True)
+        else:
+            if cfg["postprocessing_if_failed"]:
+                call(cfg["postprocessing_shell"], shell=True)
+            else:
+                fastprint("Postprocessing disabled on fails by config parameter", level=1)
+    else:
+        fastprint("Postprocessing disabled", level=1)
 
 
 if  __name__ ==  "__main__" :
-	parser = argparse.ArgumentParser()
-	group = parser.add_mutually_exclusive_group()
-	group.add_argument("-q", "--quiet", help="Supress output", action="store_true")
-	group.add_argument("-c", "--compact", help="Display not detailed output", action="store_true")
-	parser.add_argument("-a", "--rebuildall", help="Rebuild all targets", action="store_true")
-	parser.add_argument("-i", "--input", help="Specify config file (default: fastbuild.json)", type=str)
-	parser.add_argument("-t", "--tree", help="Display dependencies tree and exit", action="store_true")
-	parser.add_argument("-r", "--recmax", help="Maximum deep of dependencies tree (default: 24)", type=int)
-	parser.add_argument("-e", "--encode", help="Force strings encoding in this Python 3 format")
-	args = parser.parse_args()
-	
-	if args.quiet:
-		outputlevel = 2
+    #passing args and start main()
+    parser = argparse.ArgumentParser()
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument("-q", "--quiet", help="Supress output", action="store_true")
+    group.add_argument("-c", "--compact", help="Display not detailed output", action="store_true")
+    parser.add_argument("-a", "--rebuildall", help="Rebuild all targets", action="store_true")
+    parser.add_argument("-i", "--input", help="Specify config file (default: fastbuild.json)", type=str)
+    parser.add_argument("-t", "--tree", help="Display dependencies tree and exit", action="store_true")
+    parser.add_argument("-r", "--recmax", help="Maximum deep of dependencies tree (default: 24)", type=int)
+    parser.add_argument("-e", "--encode", help="Force strings encoding in this Python 3 format")
+    args = parser.parse_args()
+    
+    if args.quiet:
+        outputlevel = 2
 
-	if args.compact:
-		outputlevel = 1
+    if args.compact:
+        outputlevel = 1
 
-	if args.rebuildall:
-		rebuildall = True
+    if args.rebuildall:
+        rebuildall = True
 
-	if args.input:
-		configFileName = args.input
+    if args.input:
+        configFileName = args.input
 
-	if args.tree:
-		treeOut = True
+    if args.tree:
+        treeOut = True
 
-	if args.recmax:
-		if (args.recmax < 0 or args.recmax > 99):
-			sys.exit("Recmax must be in range from 0 to 99! (default: 24)")
-		else:
-			recursionThreshold = args.recmax
+    if args.recmax:
+        if (args.recmax < 0 or args.recmax > 99):
+            sys.exit("Recmax must be in range from 0 to 99! (default: 24)")
+        else:
+            recursionThreshold = args.recmax
 
-	if args.encode:
-		systemEncoding = args.encode
+    if args.encode:
+        systemEncoding = args.encode
 
 
-	start = time.time() 
-	main()
-	end = time.time()
-	fastprint(bgcolors.BOLD + "\nFastbuild done in " + str(round(end - start, 2)) + " seconds. Thank you." + bgcolors.ENDC, level=1)
+    start = time.time() 
+    main()
+    end = time.time()
+    fastprint(bgcolors.BOLD + "\nFastbuild done in " + str(round(end - start, 2)) + " seconds. Thank you." + bgcolors.ENDC, level=1)
