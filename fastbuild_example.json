@@ -1,0 +1,24 @@
+{
+	"compiler": "g++",
+	"compiler_params": "-pipe -O2 -funroll-loops -std=c++11",
+	
+	"linker_params": 
+		"-lpthread -lcurl -lopengl -lglut",
+
+	"linker_output_file": "foobar",
+
+	"postprocessing_shell": "strip foobar",
+	"postprocessing_if_failed": false,
+
+	"sources_endings": [".cpp", ".c"],
+	"headers_endings": [".h", ".hpp"],
+
+	"untracked_action": "ask",
+
+	"macrotargets":
+	{
+		"macrotarget_one": ["../*.cpp"],
+		"macrotarget_two": ["../dir_two/*.cpp"],
+		"macrotarget_some": ["../somedir/somefile.cpp"]
+	}
+}
