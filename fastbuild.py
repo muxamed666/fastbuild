@@ -495,6 +495,19 @@ def main():
 	if not failmarker: 
 		generateChecksums(finaldependency)
 
+	fastprint("\nStep 6: Running postprocessing shell: ", level=1)	
+
+	if ("postprocessing_shell" in cfg.keys()) and (cfg["postprocessing_shell"] != ""):
+		if not failmarker:
+			call(cfg["postprocessing_shell"], shell=True)
+		else:
+			if cfg["postprocessing_if_failed"]:
+				call(cfg["postprocessing_shell"], shell=True)
+			else:
+				fastprint("Postprocessing disabled on fails by config parameter", level=1)
+	else:
+		fastprint("Postprocessing disabled", level=1)
+
 
 if  __name__ ==  "__main__" :
 	parser = argparse.ArgumentParser()
