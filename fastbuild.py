@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 
-# Copyright 2017 Motylenok Mikhail
+# Copyright 2017-2018 Motylenok Mikhail
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -44,6 +44,8 @@ import json
 import pprint 
 import time
 import hashlib
+import threading
+import copy
 
 repositoryRoot = "."
 relativeToRoot = "."
@@ -54,6 +56,8 @@ treeOut = False
 recursionThreshold = 24
 systemEncoding = sys.stdout.encoding
 usedFasttreeFilenames = list()
+failmarker = False
+threadLimit = 1
 
 
 class bgcolors:
@@ -231,7 +235,7 @@ def checksumModificatedSinceLastFastbuild(fname, oldchk):
 
 
 def getModificatedByGit(correctEndings, untrackedAction, filestree, pollHeaders):
-    """With the help of the repository, git determines the modification of 
+    """With the repository data, git determines the modification of 
     files in the file tree with the specified extensions. For files that are not 
     specified in git, the modified function attempts to determine the fact of the 
     change using a hash table.
@@ -374,7 +378,7 @@ def detectMissingObjFiles(filetree):
 
 def generateChecksums(filetree):
     """Generates a hash table with checksums for the project files so that 
-    the program can then find changes to the subsequent build from the current one.
+    the program can then find changes to the next build from the current one.
     """
 
     sums = dict()
@@ -436,6 +440,58 @@ def restorePregeneratedDependenciesForFile(filepath):
     return depobject
 
 
+def microtargetBuilder(localBuildlist, localCompiler, localCParams, localLParams, threadNumber):
+    """Builds specified range of microtargets in separate thread"""
+    for target in localBuildlist:
+        targetObjName = hashlib.md5(target.encode('utf-8')).hexdigest()
+        targetObjPath = "fastbuild/" + targetObjName + ".o"
+        compilerShell = localCompiler + " " + localCParams + " " + localLParams + " -c " + target +" -o " + targetObjPath
+        #fastprint(compilerShell)
+                
+        cstart = time.time()
+        ret = call(compilerShell, shell=True)
+        cend = time.time()
+        
+        if(ret != 0):
+            global failmarker
+            failmarker = True
+            fastprint("["+localCompiler+"] Compile " + target + " (object id: "+targetObjName+") " 
+                + "[failed] in thread #" + str(threadNumber))
+        else:
+            fastprint("["+localCompiler+"] Compile " + target + " (object id: "+targetObjName+") " 
+                + "[Successful in " + str(round(cend - cstart, 2)) + " seconds] in thread #" + str(threadNumber))
+
+
+def separateBuildLists(globalBuildlist, threads):
+    """Separates build list per different threads"""
+    listSize = int(len(globalBuildlist) / threads)
+    listOfLists = list()
+    tmpList = list()
+    itr = 0
+
+    if listSize == 0:
+        listOfLists.append(copy.deepcopy(globalBuildlist))
+        return listOfLists
+
+    #fastprint(str(len(globalBuildlist)) + " - all")
+    #fastprint(str(listSize) + " - one thread")
+
+    for oneTarget in globalBuildlist:
+        tmpList.append(oneTarget)
+        itr = itr + 1
+        if ((itr == listSize) and (len(listOfLists) < threads)):
+            copylist = list()
+            copylist = copy.deepcopy(tmpList)
+            listOfLists.append(copylist)
+            tmpList.clear()
+            itr = 0
+
+    listOfLists[0].extend(tmpList)
+
+    #pprint.pprint(listOfLists, indent=4)
+    return listOfLists
+
+
 def main():
     """ main() function, consistently performs all the steps of the project's build porcess """
     fastprint(bgcolors.BOLD + bgcolors.UNDERLINE + "\nFastbuild - (c) by Motylenok \"muxamed666\" Mikhail\n" + bgcolors.ENDC)
@@ -471,6 +527,7 @@ def main():
     fastprint("[100%] Done!              ", level=1)
     #fastprint(finalfiles)
 
+
     fastprint("\nStep 2: Resolving dependencies and building dependency tree: ", level=1)
 
     global usedFasttreeFilenames
@@ -485,7 +542,7 @@ def main():
 
     for mt in finalfiles:
         if treeOut:
-            fastprint(bgcolors.HEADER + bgcolors.BOLD + "\n * * * * * * * * * " + mt + " * * * * * * * * * " + bgcolors.ENDC)
+            fastprint(bgcolors.HEADER + bgcolors.BOLD + "\n " + mt + " * * * : " + bgcolors.ENDC)
         srcdps = list()
         for fn in finalfiles.get(mt):
             i = i + 1
@@ -563,34 +620,43 @@ def main():
     else:
         fastprint("Done!", level=1)
 
+
     fastprint("\nStep 4: Compiling microtargets: ", level=1)
     compiler = cfg["compiler"]
     cparams = cfg["compiler_params"]
     lparams = cfg["linker_params"]
-    failmarker = False
 
     if (len(buildlist) == 0):
         fastprint("Nothing to compile.", level=1)
 
-    for target in buildlist:
-        targetObjName = hashlib.md5(target.encode('utf-8')).hexdigest()
-        targetObjPath = "fastbuild/" + targetObjName + ".o"
-        compilerShell = compiler + " " + cparams + " " + lparams + " -c " + target +" -o " + targetObjPath
-        #fastprint(compilerShell)
-        fastprint("["+compiler+"] Compile " + target + " (object id: "+targetObjName+") ", fastend="")
-        cstart = time.time()
-        ret = call(compilerShell, shell=True)
-        cend = time.time()
-        if(ret != 0):
-            failmarker = True
-            fastprint("[failed]")
-        else:
-            fastprint("[Successful in " + str(round(cend - cstart, 2)) + " seconds]")
+    global failmarker
+
+    threadList = list()
+
+    #multithreading compilation
+    if(threadLimit == 1):
+        microtargetBuilder(buildlist, compiler, cparams, lparams, 0)
+    else:
+        if(len(buildlist) > 0):
+            fastprint("Compiling microtargets in up to " + str(threadLimit) + " threads")
+            buildLists = separateBuildLists(buildlist, threadLimit)
+            thr = 0
+            for oneBuildList in buildLists:
+                t = threading.Thread(target=microtargetBuilder, args=(oneBuildList, compiler, cparams, lparams, thr))
+                t.start()
+                threadList.append(t)
+                thr = thr + 1
+            for oneThread in threadList:
+                oneThread.join()
+             
+
 
     if failmarker:
         fastprint("Some targets failed to compile. Please fix errors, and run fastbuild again.", level=2)
         sys.exit(0)
     
+    #linking
+
     fastprint("\nStep 5: Linking obj-files: ", level=1)
     outfile = cfg["linker_output_file"]
 
@@ -615,6 +681,7 @@ def main():
 
     if not failmarker: 
         generateChecksums(finaldependency)
+
 
     fastprint("\nStep 6: Running postprocessing shell: ", level=1)  
 
@@ -641,6 +708,7 @@ if  __name__ ==  "__main__" :
     parser.add_argument("-t", "--tree", help="Display dependencies tree and exit", action="store_true")
     parser.add_argument("-r", "--recmax", help="Maximum deep of dependencies tree (default: 24)", type=int)
     parser.add_argument("-e", "--encode", help="Force strings encoding in this Python 3 format")
+    parser.add_argument("-p", "--threads", help="Number of threads (min 1, max 32, default 1)", type=int)
     args = parser.parse_args()
     
     if args.quiet:
@@ -663,6 +731,12 @@ if  __name__ ==  "__main__" :
             sys.exit("Recmax must be in range from 0 to 99! (default: 24)")
         else:
             recursionThreshold = args.recmax
+
+    if args.threads:
+        if (args.threads < 1 or args.threads > 32):
+            sys.exit("Thread number must be in range from 1 to 32! (default: 1)")
+        else:
+            threadLimit = args.threads
 
     if args.encode:
         systemEncoding = args.encode
