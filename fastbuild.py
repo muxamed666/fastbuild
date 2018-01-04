@@ -36,6 +36,7 @@
 
 from subprocess import Popen, PIPE
 from subprocess import call
+import fnmatch
 import argparse
 import sys
 import os
@@ -52,10 +53,11 @@ configFileName = "fastbuild.json"
 treeOut = False
 recursionThreshold = 24
 systemEncoding = sys.stdout.encoding
+usedFasttreeFilenames = list()
 
 
 class bgcolors:
-    """ Class contains background color escapes for terminal """
+    """Class contains background color escapes for terminal """
     HEADER = '\033[95m'
     BLUE = '\033[94m'
     GREEN = '\033[92m'
@@ -65,6 +67,10 @@ class bgcolors:
     BOLD = '\033[1m'
     UNDERLINE = '\033[4m'
 
+class pregenerationError(Exception):
+    """Exception class used for json and files error in pregenerated dependency trees """
+    def __init__(self, message):
+        self.message = message
 
 def fastprint(txt, level=0, fastend=None):
     """Function implements output operation.
@@ -168,6 +174,15 @@ def findDependeciesInFile(filename, deep, maxhops, deplist):
             
             ndp = deep + 1
             findDependeciesInFile(dependency, ndp, recursionThreshold, deplist)     
+    
+    #dump tree only for 1-st range files
+    if deep == 1:
+        pregenerationDumpFilename = "fastbuild/" + hashlib.md5(open(filename, 'rb').read()).hexdigest() + ".fasttree"
+        usedFasttreeFilenames.append(pregenerationDumpFilename)
+        pdfile = open(pregenerationDumpFilename, "w")
+        pdfile.write(json.dumps(deplist))
+        pdfile.close()
+
     return deplist  
 
 
@@ -387,9 +402,43 @@ def generateChecksums(filetree):
     #pprint.pprint(sums)
 
 
+def fileHasPregeneratedTree(filepath):
+    """Checks if file has a pregenerated dependency tree
+    If checksum of file is changed, dependecy tree is outdated and rebuild is needed
+    """
+    try:
+        checksumNew = hashlib.md5(open(filepath, 'rb').read()).hexdigest()
+        filename = "fastbuild/" + checksumNew + ".fasttree"
+        readableTreeFile = open(filename)
+    except IOError:
+        return False
+    return True
+
+
+def restorePregeneratedDependenciesForFile(filepath):
+    """Reads pregenerated dependency tree for specified file"""
+    try:
+        checksumNew = hashlib.md5(open(filepath, 'rb').read()).hexdigest()
+        filename = "fastbuild/" + checksumNew + ".fasttree"
+        usedFasttreeFilenames.append(filename)
+        readableTreeFile = open(filename)
+        deptxt = readableTreeFile.read()
+    except IOError:
+        fastprint("Error reading file " + filename + "!")
+        raise pregenerationError("File Error")
+    
+    try:
+        depobject = json.loads(deptxt)
+    except json.decoder.JSONDecodeError:
+        fastprint("json structure in file "+filename+" is incorrect!")    
+        raise pregenerationError("JSON Error")
+
+    return depobject
+
+
 def main():
     """ main() function, consistently performs all the steps of the project's build porcess """
-    fastprint(bgcolors.BOLD + bgcolors.UNDERLINE + "\nFastbuild - (c) 2017 by Motylenok \"muxamed666\" Mikhail\n" + bgcolors.ENDC)
+    fastprint(bgcolors.BOLD + bgcolors.UNDERLINE + "\nFastbuild - (c) by Motylenok \"muxamed666\" Mikhail\n" + bgcolors.ENDC)
 
     fastprint("Step 0: Reading Config: ", level=1)
     cfg = getConfig()
@@ -422,15 +471,17 @@ def main():
     fastprint("[100%] Done!              ", level=1)
     #fastprint(finalfiles)
 
-
     fastprint("\nStep 2: Resolving dependencies and building dependency tree: ", level=1)
 
+    global usedFasttreeFilenames
     global repositoryRoot
     child = Popen("git rev-parse --show-toplevel", shell=True, stdin=PIPE, stdout=PIPE) 
     repositoryRoot = str(list(child.stdout.read().split(b"\n"))[0].decode(systemEncoding))
 
     finaldependency = dict()
     i = 0
+    restoredNodesCount = 0
+    outdatedNodesCount = 0
 
     for mt in finalfiles:
         if treeOut:
@@ -440,7 +491,19 @@ def main():
             i = i + 1
             if treeOut:
                 fastprint(bgcolors.GREEN + bgcolors.BOLD + "\n>>>> " + fn + bgcolors.ENDC)
-            deps = findDependeciesInFile(fn, 1, recursionThreshold, list())
+            if ((not fileHasPregeneratedTree(fn)) or treeOut):
+                outdatedNodesCount = outdatedNodesCount + 1
+                if treeOut:
+                    fastprint("Tree node is out of date, rebuilding...")
+                deps = findDependeciesInFile(fn, 1, recursionThreshold, list())
+            else:
+                restoredNodesCount = restoredNodesCount + 1
+                if treeOut:
+                    fastprint("Tree generation not performed here, tree restored from cache...")
+                try:
+                    deps = restorePregeneratedDependenciesForFile(fn)
+                except pregenerationError:
+                    deps = findDependeciesInFile(fn, 1, recursionThreshold, list())
             filedeps = dict({fn : deps})
             srcdps.append(filedeps)
             if not treeOut:
@@ -450,8 +513,26 @@ def main():
     fastprint("[100%] Done!              ", level=1)
     #pprint.pprint(finaldependency, indent=4)
 
+    #cleanup
+    deletedFiles = 0
+    listOfFiles = os.listdir('fastbuild/')  
+    clPattern = "*.fasttree"  
+    for clEntry in listOfFiles:  
+        if fnmatch.fnmatch(clEntry, clPattern):
+            clFilename = "fastbuild/"+clEntry
+            if clFilename not in usedFasttreeFilenames:
+                    os.remove(clFilename)
+                    deletedFiles = deletedFiles + 1
+
     if treeOut:
         sys.exit(0)
+
+    fastprint("\nDependency tree: "+str(filescount)+" nodes total, "+str(restoredNodesCount)
+        +" nodes restored, "+str(outdatedNodesCount)+" nodes out of date.")
+    fastprint("Dependency tree: "+str(len(usedFasttreeFilenames))+" nodes in use, "
+        +str(deletedFiles)+" nodes cleaned up.")
+
+
 
     fastprint("\nStep 3: Calculating changes: ", level=1)
 
