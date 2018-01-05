@@ -8,7 +8,9 @@ The primary objectives of this utility are:
 * Quick and painless integration into the work (just one small config file)
 * Automatic detection of changes and their dependencies in the code (both using git and using their own hash tables)
 * Caching changes ("the code written once is compiled once")
-* Support for GCC, G++, and clang compilers. Requires a git version control in a project. 
+* Support for GCC, G++, and clang compilers. Requires a git version control in a project.
+* Using multiple configurations for one repository (release and debug for example)
+* Multithreading support, gives more perfomance for multicore CPU (supports up to 32 threads) 
 
 # Installation
 Installation is a simple procedure:
@@ -38,7 +40,7 @@ When you have this config file in your git repo, you can just type "fastbuild" a
 
 Also, availible some command line parameters: 
 
-* usage: fastbuild `[-h]` `[-q | -c]` `[-a]` `[-i INPUT]` `[-t]` `[-r RECMAX]` `[-e ENCODE]`
+* usage: fastbuild `[-h]` `[-q | -c]` `[-a]` `[-i INPUT]` `[-t]` `[-r RECMAX]` `[-e ENCODE]` `[-p THREADS]` `[-v]`
 
 optional arguments:
 *  `-h`, `--help`            show this help message and exit
@@ -49,6 +51,8 @@ optional arguments:
 *  `-t`, `--tree`            Display dependencies tree and exit
 *  `-r RECMAX`, `--recmax RECMAX` Maximum deep of dependencies tree (default: 24)
 *  `-e ENCODE`, `--encode ENCODE` Force strings encoding in this Python 3 format
+*  `-p THREADS`, `--threads THREADS` Number of threads (min 1, max 32, default 1)
+*  `-v`, `--version`         Display version string and exit
 
 
 # Legit?
