@@ -516,9 +516,16 @@ def separateBuildLists(globalBuildlist, threads):
             tmpList.clear()
             itr = 0
 
-    listOfLists[0].extend(tmpList)
+    itr = 0
+    for moduloTarget in tmpList:
+        listOfLists[itr].append(moduloTarget)
+        itr = itr + 1
+        if (itr == threads):
+            itr = 0
+    
 
     #pprint.pprint(listOfLists, indent=4)
+    
     return listOfLists
 
 
