@@ -58,7 +58,7 @@ systemEncoding = sys.stdout.encoding
 usedFasttreeFilenames = list()
 failmarker = False
 threadLimit = 1
-verstring = "fastbuild.py 1.2"
+verstring = "fastbuild.py 1.2b"
 
 
 class bgcolors:
@@ -529,6 +529,18 @@ def separateBuildLists(globalBuildlist, threads):
     return listOfLists
 
 
+def cleanupDependencyTrees(dependency):
+    """ cleans up dependency's fasttrees, to prevent nested includes problem
+    This trees will be generated on next fastbuild run
+    """
+    for dp in dependency:
+        try:
+            dpchecksum = hashlib.md5(open(dp, 'rb').read()).hexdigest()
+            dpname = "fastbuild/" + dpchecksum + ".fasttree"
+            os.remove(dpname)
+        except OSError:
+            continue
+
 def main():
     """ main() function, consistently performs all the steps of the project's build porcess """
     fastprint(bgcolors.BOLD + bgcolors.UNDERLINE + "\nFastbuild - (c) by Motylenok \"muxamed666\" Mikhail\n" + bgcolors.ENDC)
@@ -637,6 +649,8 @@ def main():
     sources = getModificatedByGit(cfg["sources_endings"], cfg["untracked_action"], finaldependency, False)
     headers = getModificatedByGit(cfg["headers_endings"], cfg["untracked_action"], finaldependency, True)
     dependn = selectDependecies(finaldependency, headers)
+
+    cleanupDependencyTrees(dependn)
 
     buildlist = sources
 
