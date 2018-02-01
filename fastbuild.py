@@ -58,6 +58,7 @@ systemEncoding = sys.stdout.encoding
 usedFasttreeFilenames = list()
 failmarker = False
 threadLimit = 1
+rebuildTree = False
 verstring = "fastbuild.py 1.2b"
 
 
@@ -597,7 +598,7 @@ def main():
             i = i + 1
             if treeOut:
                 fastprint(bgcolors.GREEN + bgcolors.BOLD + "\n>>>> " + fn + bgcolors.ENDC)
-            if ((not fileHasPregeneratedTree(fn)) or treeOut):
+            if ((not fileHasPregeneratedTree(fn)) or treeOut or rebuildTree):
                 outdatedNodesCount = outdatedNodesCount + 1
                 if treeOut:
                     fastprint("Tree node is out of date, rebuilding...")
@@ -758,6 +759,7 @@ if  __name__ ==  "__main__" :
     parser.add_argument("-i", "--input", help="Specify config file (default: fastbuild.json)", type=str)
     parser.add_argument("-t", "--tree", help="Display dependencies tree and exit", action="store_true")
     parser.add_argument("-r", "--recmax", help="Maximum deep of dependencies tree (default: 24)", type=int)
+    parser.add_argument("-u", "--updatetree", help="Force fastbuild to generate new dependency tree", action="store_true")
     parser.add_argument("-e", "--encode", help="Force strings encoding in this Python 3 format")
     parser.add_argument("-p", "--threads", help="Number of threads (min 1, max 32, default 1)", type=int)
     parser.add_argument("-v", "--version", help="Display version string and exit", action="store_true")
@@ -777,6 +779,9 @@ if  __name__ ==  "__main__" :
 
     if args.tree:
         treeOut = True
+
+    if args.updatetree:
+        rebuildTree = True
 
     if args.recmax:
         if (args.recmax < 0 or args.recmax > 99):

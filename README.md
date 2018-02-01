@@ -50,6 +50,7 @@ optional arguments:
 *  `-i INPUT`, `--input INPUT`  Specify config file (default: fastbuild.json)
 *  `-t`, `--tree`            Display dependencies tree and exit
 *  `-r RECMAX`, `--recmax RECMAX` Maximum deep of dependencies tree (default: 24)
+*  `-u`, `--updatetree`            Force fastbuild to generate new dependency tree
 *  `-e ENCODE`, `--encode ENCODE` Force strings encoding in this Python 3 format
 *  `-p THREADS`, `--threads THREADS` Number of threads (min 1, max 32, default 1)
 *  `-v`, `--version`         Display version string and exit
