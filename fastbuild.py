@@ -183,6 +183,8 @@ def findDependeciesInFile(filename, deep, maxhops, deplist):
     
     #dump tree only for 1-st range files
     if deep == 1:
+        if (not os.path.isdir("fastbuild")):
+            os.makedirs("fastbuild")
         pregenerationDumpFilename = "fastbuild/" + hashlib.md5(open(filename, 'rb').read()).hexdigest() + ".fasttree"
         usedFasttreeFilenames.append(pregenerationDumpFilename)
         pdfile = open(pregenerationDumpFilename, "w")
